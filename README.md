@@ -26,7 +26,7 @@ This project is a reverse-engineered version of Chainlit's cloud, offering limit
     ```
 3. **Install Chainlit**
 
-    If you haven't install chainlit. 0.7.700 is the last tested version that works with the schema
+    If you haven't installed chainlit, install version 0.7.700 as its the last proven version that works
     ```bash
     pip install chainlit==0.7.700
     ```
@@ -47,7 +47,7 @@ This project is a reverse-engineered version of Chainlit's cloud, offering limit
 
     To run the server, use the following command:
     ```bash
-    uvicorn main:app --reload --port 5000 
+    uvicorn main:app --port 5000 
     ```
     Add --host 0.0.0.0 if you want to host publicly 
 
