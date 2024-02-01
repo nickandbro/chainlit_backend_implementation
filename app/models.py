@@ -23,6 +23,23 @@ class User(Base):
 
 
 
+class Element(Base):
+    __tablename__ = 'element'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    conversation_id = Column(Integer, ForeignKey('conversation.id'))
+    type = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    mime = Column(String, nullable=True)
+    url = Column(String, nullable=True)
+    display = Column(String, nullable=True)
+    language = Column(String, nullable=True)
+    size = Column(String, nullable=True)
+    object_key = Column(String, nullable=True)
+    conversation = relationship("Conversation", back_populates="elements")
+    # forIds field seems to reference other IDs, possibly messages or elements. 
+    # This could be implemented as a JSONB field or a separate association table
+    # depending on your application's requirements.
+    for_ids = Column(JSONB, default=list, nullable=True)
 
 class Message(Base):
     __tablename__ = 'message'
@@ -54,4 +71,5 @@ class Conversation(Base):
     tags = Column(JSONB, default=list, nullable=False)
     # Relationship with User
     appUser = relationship("User", back_populates="conversations")
+    elements = relationship("Element", back_populates="conversation")
     # Add a back_populates in User model for conversation

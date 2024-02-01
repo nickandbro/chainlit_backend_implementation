@@ -2,7 +2,7 @@
 import datetime
 import strawberry
 from typing import Any, List, Union, Optional
-from .models import User, Message, Conversation
+from .models import User, Message, Conversation, Element
 from .database import async_session
 import datetime 
 from dateutil import parser
@@ -63,15 +63,16 @@ class UserType:
 @strawberry.type
 class ElementType:
     id: strawberry.ID
-    conversationId: str
+    conversationId: int
     type: str
     name: str
     mime: Optional[str]
     url: Optional[str]
     display: Optional[str]
     language: Optional[str]
-    size: Optional[int]
+    size: Optional[str]
     forIds: List[str]
+    objectKey: Optional[str]  # New field for object key
 
 @strawberry.type
 class PageInfo:
@@ -193,7 +194,8 @@ class Query:
         async with async_session() as session:
             query = select(Conversation).options(
                 selectinload(Conversation.appUser),
-                selectinload(Conversation.messages)
+                selectinload(Conversation.messages),
+                selectinload(Conversation.elements)  # Load elements as well
             ).order_by(Conversation.createdAt.desc())
             if username:
                 query = query.join(User).where(User.username == username)
@@ -222,24 +224,38 @@ class Query:
                         ),
                         tags=conversation.tags,
                         messages=[
-                        MessageType(
-                            id=str(message.id),
-                            isError=message.isError,
-                            parentId=str(message.parentId) if message.parentId else None,
-                            indent=message.indent,
-                            author=message.author,
-                            content=message.content,
-                            waitForAnswer=message.waitForAnswer,
-                            humanFeedback=message.humanFeedback,  # Correctly handle this field
-                            humanFeedbackComment=message.humanFeedbackComment,  # Correctly handle this field
-                            disableHumanFeedback=message.disableHumanFeedback,
-                            language=message.language,
-                            prompt=message.prompt if message.prompt else None,
-                            authorIsUser=message.authorIsUser,
-                            createdAt=export_datetime(message.createdAt)
-                        ) for message in conversation.messages
+                            MessageType(
+                                id=str(message.id),
+                                isError=message.isError,
+                                parentId=str(message.parentId) if message.parentId else None,
+                                indent=message.indent,
+                                author=message.author,
+                                content=message.content,
+                                waitForAnswer=message.waitForAnswer,
+                                humanFeedback=message.humanFeedback,  # Correctly handle this field
+                                humanFeedbackComment=message.humanFeedbackComment,  # Correctly handle this field
+                                disableHumanFeedback=message.disableHumanFeedback,
+                                language=message.language,
+                                prompt=message.prompt if message.prompt else None,
+                                authorIsUser=message.authorIsUser,
+                                createdAt=export_datetime(message.createdAt)
+                            ) for message in conversation.messages
                         ],
-                        elements=[],  
+                        elements = [
+                            ElementType(
+                                id=element.id,
+                                conversationId=element.conversation_id,
+                                type=element.type,
+                                name=element.name,
+                                mime=element.mime,
+                                url=element.url,
+                                display=element.display,
+                                language=element.language,
+                                size=element.size,
+                                forIds=element.for_ids,
+                                objectKey=element.object_key
+                            ) for element in conversation.elements
+                        ],
                         metadata={}
 
                     ),
@@ -287,7 +303,27 @@ class Query:
                     createdAt=export_datetime(message.createdAt)
                 ) for message in messages 
             ]
-            elements = [
+            elements_result = await session.execute(
+                select(Element)
+                .where(Element.conversation_id == conversation.id)
+            )
+            elements = elements_result.scalars().all()
+
+            # Convert elements to ElementType
+            element_type = [
+                ElementType(
+                    id=element.id,
+                    conversationId=element.conversation_id,
+                    type=element.type,
+                    name=element.name,
+                    mime=element.mime,
+                    objectKey=element.object_key,
+                    url=element.url,
+                    display=element.display,
+                    language=element.language,
+                    size=element.size,
+                    forIds=element.for_ids
+                ) for element in elements
             ]
 
             return ConversationType(
@@ -305,7 +341,7 @@ class Query:
                 ),
                 tags=conversation.tags,
                 messages=messages,
-                elements=elements,  
+                elements=element_type,  
                 metadata={}  
 
             )
@@ -485,6 +521,52 @@ class Mutation:
             await session.execute(stmt)
             await session.commit()
             return True
+    
+    @strawberry.mutation
+    async def create_element(
+        self, 
+        conversationId: strawberry.ID,
+        type: str,
+        name: str,
+        display: str,
+        forIds: List[str],
+        url: Optional[str] = None,
+        objectKey: Optional[str] = None,
+        size: Optional[str] = None,
+        language: Optional[str] = None,
+        mime: Optional[str] = None
+    ) -> Optional[ElementType]:
+        async with async_session() as session:
+            # Convert the size from string to integer if necessary
+
+            new_element = Element(
+                conversation_id=int(conversationId),  # Assuming conversationId is a string of integer
+                type=type,
+                name=name,
+                display=display,
+                url=url,
+                object_key=objectKey,
+                size=size,
+                language=language,
+                mime=mime,
+                for_ids=forIds  # Assuming this is a JSON serializable list
+            )
+            session.add(new_element)
+            await session.commit()
+
+            return ElementType(
+                id=new_element.id,
+                conversationId=new_element.conversation_id,
+                type=new_element.type,
+                name=new_element.name,
+                mime=new_element.mime,
+                url=new_element.url,
+                objectKey=new_element.object_key,
+                display=new_element.display,
+                language=new_element.language,
+                size=new_element.size,
+                forIds=new_element.for_ids
+            )
     @strawberry.mutation
     async def create_conversation(self, appUserId: Optional[str] = None, tags: Optional[List[str]] = None) -> Optional[ConversationType]:
         if not appUserId:
